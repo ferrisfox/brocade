@@ -1,8 +1,13 @@
-use std::num::NonZeroU8;
+use core::fmt;
+use std::{num::NonZeroU8, ops::Deref, str::FromStr};
 
-pub struct GTIN([u8; 14]);
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, PartialEq)]
+pub struct GTIN(pub [u8; 14]);
 
 impl GTIN {
+    #[must_use]
     pub fn new(gtin: [u8; 14]) -> GTIN {
         GTIN(gtin)
     }
@@ -21,9 +26,10 @@ impl GTIN {
         }
     }
 
+    #[must_use]
     pub fn get_leading_zeros(&self) -> u8 {
         let mut zeros = 0;
-        for &digit in self.0.iter() {
+        for &digit in &self.0 {
             if digit == 0 {
                 zeros += 1;
             } else {
@@ -45,10 +51,12 @@ impl GTIN {
         }
     }
 
+    #[must_use]
     pub fn get_check_digit(&self) -> u8 {
         self.0[13]
     }
 
+    #[must_use]
     pub fn calculate_check_digit(&self) -> u8 {
         let mut sum = 0;
         for (i, &digit) in self.0.iter().enumerate() {
@@ -60,12 +68,89 @@ impl GTIN {
         (10 - (sum % 10)) % 10
     }
 
+    #[must_use]
     pub fn is_check_digit_valid(&self) -> bool {
         self.get_check_digit() == self.calculate_check_digit()
     }
 
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         self.is_check_digit_valid() && self.get_type().is_ok()
+    }
+}
+
+impl<'de> Deserialize<'de> for GTIN {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let gtin = String::deserialize(deserializer)?;
+        match gtin.parse() {
+            Ok(gtin) => Ok(gtin),
+            Err(_) => Err(serde::de::Error::custom("Invalid GTIN")),
+        }
+    }
+}
+
+impl Serialize for GTIN {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl TryFrom<String> for GTIN {
+    type Error = GTINError;
+
+    fn try_from(gtin: String) -> Result<Self, GTINError> {
+        let mut gtin_array = [0; 14];
+        for (i, digit) in gtin.chars().enumerate() {
+            if i == 14 { Err(GTINError)? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError)?.try_into().unwrap();
+        }
+        Ok(GTIN(gtin_array))
+    }
+}
+
+impl TryFrom<&str> for GTIN {
+    type Error = GTINError;
+
+    fn try_from(gtin: &str) -> Result<Self, GTINError> {
+        let mut gtin_array = [0; 14];
+        for (i, digit) in gtin.chars().enumerate() {
+            if i == 14 { Err(GTINError)? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError)?.try_into().unwrap();
+        }
+        Ok(GTIN(gtin_array))
+    }
+}
+
+impl FromStr for GTIN {
+    type Err = GTINError;
+
+    fn from_str(gtin: &str) -> Result<Self, Self::Err> {
+        let mut gtin_array = [0; 14];
+        for (i, digit) in gtin.chars().enumerate() {
+            if i == 14 { Err(GTINError)? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError)?.try_into().unwrap();
+        }
+        Ok(GTIN(gtin_array))
+    }
+}
+
+impl fmt::Display for GTIN {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.iter().map(|&digit| (digit + 48) as char).collect::<String>())
+    }
+}
+
+impl Deref for GTIN {
+    type Target = [u8; 14];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

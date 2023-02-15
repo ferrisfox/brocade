@@ -22,7 +22,7 @@ impl GTIN {
         } else if self.0[2..6] == [0, 0, 0, 0] && self.0[6] != 0 {
             Ok(GTINType::GTIN8)
         } else {
-            Err(GTINError)
+            Err(GTINError::InvalidGTIN("Invalid GTIN format".to_string()))
         }
     }
 
@@ -87,7 +87,7 @@ impl<'de> Deserialize<'de> for GTIN {
         let gtin = String::deserialize(deserializer)?;
         match gtin.parse() {
             Ok(gtin) => Ok(gtin),
-            Err(_) => Err(serde::de::Error::custom("Invalid GTIN")),
+            Err(e) => Err(serde::de::Error::custom(e.to_string())),
         }
     }
 }
@@ -107,8 +107,8 @@ impl TryFrom<String> for GTIN {
     fn try_from(gtin: String) -> Result<Self, GTINError> {
         let mut gtin_array = [0; 14];
         for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError)? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError)?.try_into().unwrap();
+            if i == 14 { Err(GTINError::InvalidGTIN("String.len() > 14".to_string()))? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("string contains non-digit char.".to_string()))?.try_into().unwrap();
         }
         Ok(GTIN(gtin_array))
     }
@@ -120,8 +120,8 @@ impl TryFrom<&str> for GTIN {
     fn try_from(gtin: &str) -> Result<Self, GTINError> {
         let mut gtin_array = [0; 14];
         for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError)? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError)?.try_into().unwrap();
+            if i == 14 { Err(GTINError::InvalidGTIN("str.len() > 14".to_string()))? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("str contains non-digit char.".to_string()))?.try_into().unwrap();
         }
         Ok(GTIN(gtin_array))
     }
@@ -133,8 +133,8 @@ impl FromStr for GTIN {
     fn from_str(gtin: &str) -> Result<Self, Self::Err> {
         let mut gtin_array = [0; 14];
         for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError)? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError)?.try_into().unwrap();
+            if i == 14 { Err(GTINError::InvalidGTIN("Sting.len() > 14".to_string()))? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("String contains non-digit char".to_string()))?.try_into().unwrap();
         }
         Ok(GTIN(gtin_array))
     }
@@ -163,7 +163,26 @@ pub enum GTINType {
 }
 
 #[derive(Debug)]
-pub struct GTINError;
+#[non_exhaustive]
+pub enum GTINError {
+    InvalidGTIN(String),
+}
+
+impl fmt::Display for GTINError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GTINError::InvalidGTIN(msg) => write!(f, "Invalid GTIN: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for GTINError {}
+
+impl serde::de::Error for GTINError {
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        GTINError::InvalidGTIN(format!("{msg}"))
+    }
+}
 
 
 // GTIN numbers are inacurate to prove the code works as expected

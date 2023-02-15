@@ -7,22 +7,28 @@ use serde::{Serialize, Deserialize};
 pub struct GTIN(pub [u8; 14]);
 
 impl GTIN {
+    // TODO: Is it posible to warn the user if they are using a GTIN that is not valid? especially for hardcoded GTINs that call this at compile time. Just an idea.
     #[must_use]
-    pub fn new(gtin: [u8; 14]) -> GTIN {
+    pub const fn new(gtin: [u8; 14]) -> GTIN {
         GTIN(gtin)
     }
 
-    pub fn get_type(&self) -> Result<GTINType, GTINError> {
+    pub const fn get_type(&self) -> Result<GTINType, GTINError> {
         if self.0[0] != 0 {
             Ok(GTINType::GTIN14)
         } else if self.0[1] != 0 {
             Ok(GTINType::GTIN13)
         } else if self.0[2] != 0 {
             Ok(GTINType::GTIN12)
-        } else if self.0[2..6] == [0, 0, 0, 0] && self.0[6] != 0 {
-            Ok(GTINType::GTIN8)
+        } else if 
+            self.0[2] == 0 && 
+            self.0[3] == 0 &&
+            self.0[4] == 0 &&
+            self.0[5] == 0 &&
+            self.0[6] != 0 {
+                Ok(GTINType::GTIN8)
         } else {
-            Err(GTINError::InvalidGTIN("Invalid GTIN format".to_string()))
+            Err(GTINError::InvalidGTIN("Invalid GTIN format"))
         }
     }
 
@@ -39,42 +45,43 @@ impl GTIN {
         zeros
     }
 
-    pub fn get_indicator_digit(&self) -> Result<NonZeroU8, GTINError> {
-        // SAFETY: The indicator digit is always non-zero. So it is safe to use NonZeroU8 like this.
+    pub const fn get_indicator_digit(&self) -> Result<NonZeroU8, GTINError> {
+        // SAFE: The indicator digit is always non-zero, otherwise get_type returns an error, so it is safe to use NonZeroU8::new_unchecked(...),
         unsafe {
-            match self.get_type()? {
-                GTINType::GTIN8 => Ok(NonZeroU8::new_unchecked(self.0[6])),
-                GTINType::GTIN12 => Ok(NonZeroU8::new_unchecked(self.0[3])),
-                GTINType::GTIN13 => Ok(NonZeroU8::new_unchecked(self.0[1])),
-                GTINType::GTIN14 => Ok(NonZeroU8::new_unchecked(self.0[0])),
+            match self.get_type() {
+                Ok(GTINType::GTIN8) => Ok(NonZeroU8::new_unchecked(self.0[6])),
+                Ok(GTINType::GTIN12) => Ok(NonZeroU8::new_unchecked(self.0[3])),
+                Ok(GTINType::GTIN13) => Ok(NonZeroU8::new_unchecked(self.0[1])),
+                Ok(GTINType::GTIN14) => Ok(NonZeroU8::new_unchecked(self.0[0])),
+                Err(e) => Err(e),
             }
         }
     }
 
     #[must_use]
-    pub fn get_check_digit(&self) -> u8 {
+    pub const fn get_check_digit(&self) -> u8 {
         self.0[13]
     }
 
-    #[must_use]
-    pub fn calculate_check_digit(&self) -> u8 {
-        let mut sum = 0;
-        for (i, &digit) in self.0.iter().enumerate() {
-            if i == 13 {
-                break;
-            }
-            sum += digit * if i % 2 == 0 { 3 } else { 1 };
+    pub const fn calculate_check_digit(&self) -> u8 {
+        macro_rules! each_digit {
+            ($($i:literal),*) => {
+                $(
+                    self.0[$i] * if $i % 2 == 0 { 3 } else { 1 }+
+                )*0
+            };
         }
+        let sum = each_digit!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
         (10 - (sum % 10)) % 10
     }
 
     #[must_use]
-    pub fn is_check_digit_valid(&self) -> bool {
+    pub const fn is_check_digit_valid(&self) -> bool {
         self.get_check_digit() == self.calculate_check_digit()
     }
 
     #[must_use]
-    pub fn is_valid(&self) -> bool {
+    pub const fn is_valid(&self) -> bool {
         self.is_check_digit_valid() && self.get_type().is_ok()
     }
 }
@@ -107,8 +114,8 @@ impl TryFrom<String> for GTIN {
     fn try_from(gtin: String) -> Result<Self, GTINError> {
         let mut gtin_array = [0; 14];
         for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError::InvalidGTIN("String.len() > 14".to_string()))? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("string contains non-digit char.".to_string()))?.try_into().unwrap();
+            if i == 14 { Err(GTINError::InvalidGTIN("String.len() > 14"))? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("string contains non-digit char."))?.try_into().unwrap();
         }
         Ok(GTIN(gtin_array))
     }
@@ -120,8 +127,8 @@ impl TryFrom<&str> for GTIN {
     fn try_from(gtin: &str) -> Result<Self, GTINError> {
         let mut gtin_array = [0; 14];
         for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError::InvalidGTIN("str.len() > 14".to_string()))? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("str contains non-digit char.".to_string()))?.try_into().unwrap();
+            if i == 14 { Err(GTINError::InvalidGTIN("str.len() > 14"))? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("str contains non-digit char."))?.try_into().unwrap();
         }
         Ok(GTIN(gtin_array))
     }
@@ -133,8 +140,8 @@ impl FromStr for GTIN {
     fn from_str(gtin: &str) -> Result<Self, Self::Err> {
         let mut gtin_array = [0; 14];
         for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError::InvalidGTIN("Sting.len() > 14".to_string()))? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("String contains non-digit char".to_string()))?.try_into().unwrap();
+            if i == 14 { Err(GTINError::InvalidGTIN("Sting.len() > 14"))? }
+            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("String contains non-digit char"))?.try_into().unwrap();
         }
         Ok(GTIN(gtin_array))
     }
@@ -165,7 +172,7 @@ pub enum GTINType {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum GTINError {
-    InvalidGTIN(String),
+    InvalidGTIN(&'static str),
 }
 
 impl fmt::Display for GTINError {
@@ -177,12 +184,6 @@ impl fmt::Display for GTINError {
 }
 
 impl std::error::Error for GTINError {}
-
-impl serde::de::Error for GTINError {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        GTINError::InvalidGTIN(format!("{msg}"))
-    }
-}
 
 
 // GTIN numbers are inacurate to prove the code works as expected

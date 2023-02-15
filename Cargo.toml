@@ -5,5 +5,11 @@ edition = "2021"
 
 [dependencies]
 reqwest = { version = "0.11.14", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros"] }
 serde = { version = "1.0.130", features = ["derive"] }
+
+# not sure if this should be how the default is structured, but rls dies in modules that requiere non-default features
+# so this stays on during development for now (see rust-lang/rust-analyzer/issues/7345 for more info)
+[features]
+default = ["blocking"]
+blocking = ["reqwest/blocking"]

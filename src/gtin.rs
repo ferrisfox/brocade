@@ -1,7 +1,9 @@
+use crate::error::GTINError;
+
 use core::fmt;
 use std::{num::NonZeroU8, ops::Deref, str::FromStr};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq)]
 pub struct GTIN(pub [u8; 14]);
@@ -13,6 +15,18 @@ impl GTIN {
         GTIN(gtin)
     }
 
+    pub const fn as_array(&self) -> [u8; 14] {
+        self.0
+    }
+
+    pub const fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec()
+    }
+
     pub const fn get_type(&self) -> Result<GTINType, GTINError> {
         if self.0[0] != 0 {
             Ok(GTINType::GTIN14)
@@ -20,20 +34,20 @@ impl GTIN {
             Ok(GTINType::GTIN13)
         } else if self.0[2] != 0 {
             Ok(GTINType::GTIN12)
-        } else if 
-            self.0[2] == 0 && 
-            self.0[3] == 0 &&
-            self.0[4] == 0 &&
-            self.0[5] == 0 &&
-            self.0[6] != 0 {
-                Ok(GTINType::GTIN8)
+        } else if self.0[2] == 0
+            && self.0[3] == 0
+            && self.0[4] == 0
+            && self.0[5] == 0
+            && self.0[6] != 0
+        {
+            Ok(GTINType::GTIN8)
         } else {
-            Err(GTINError::InvalidGTIN("Invalid GTIN format"))
+            Err(GTINError("invalid format"))
         }
     }
 
     #[must_use]
-    pub fn get_leading_zeros(&self) -> u8 {
+    pub fn leading_zeros(&self) -> u8 {
         let mut zeros = 0;
         for &digit in &self.0 {
             if digit == 0 {
@@ -45,7 +59,7 @@ impl GTIN {
         zeros
     }
 
-    pub const fn get_indicator_digit(&self) -> Result<NonZeroU8, GTINError> {
+    pub const fn indicator_digit(&self) -> Result<NonZeroU8, GTINError> {
         // SAFE: The indicator digit is always non-zero, otherwise get_type returns an error, so it is safe to use NonZeroU8::new_unchecked(...),
         unsafe {
             match self.get_type() {
@@ -59,7 +73,7 @@ impl GTIN {
     }
 
     #[must_use]
-    pub const fn get_check_digit(&self) -> u8 {
+    pub const fn check_digit(&self) -> u8 {
         self.0[13]
     }
 
@@ -77,7 +91,7 @@ impl GTIN {
 
     #[must_use]
     pub const fn is_check_digit_valid(&self) -> bool {
-        self.get_check_digit() == self.calculate_check_digit()
+        self.check_digit() == self.calculate_check_digit()
     }
 
     #[must_use]
@@ -112,12 +126,7 @@ impl TryFrom<String> for GTIN {
     type Error = GTINError;
 
     fn try_from(gtin: String) -> Result<Self, GTINError> {
-        let mut gtin_array = [0; 14];
-        for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError::InvalidGTIN("String.len() > 14"))? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("string contains non-digit char."))?.try_into().unwrap();
-        }
-        Ok(GTIN(gtin_array))
+        gtin.parse()
     }
 }
 
@@ -125,12 +134,7 @@ impl TryFrom<&str> for GTIN {
     type Error = GTINError;
 
     fn try_from(gtin: &str) -> Result<Self, GTINError> {
-        let mut gtin_array = [0; 14];
-        for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError::InvalidGTIN("str.len() > 14"))? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("str contains non-digit char."))?.try_into().unwrap();
-        }
-        Ok(GTIN(gtin_array))
+        gtin.parse()
     }
 }
 
@@ -138,10 +142,17 @@ impl FromStr for GTIN {
     type Err = GTINError;
 
     fn from_str(gtin: &str) -> Result<Self, Self::Err> {
+        println!("gtin: {gtin} {}", gtin.len());
+        if gtin.len() != 14 {
+            Err(GTINError("string length is not 14"))?
+        }
         let mut gtin_array = [0; 14];
         for (i, digit) in gtin.chars().enumerate() {
-            if i == 14 { Err(GTINError::InvalidGTIN("Sting.len() > 14"))? }
-            gtin_array[i] = digit.to_digit(10).ok_or(GTINError::InvalidGTIN("String contains non-digit char"))?.try_into().unwrap();
+            gtin_array[i] = digit
+                .to_digit(10)
+                .ok_or(GTINError("string contains non-digit char"))?
+                .try_into()
+                .unwrap();
         }
         Ok(GTIN(gtin_array))
     }
@@ -149,7 +160,14 @@ impl FromStr for GTIN {
 
 impl fmt::Display for GTIN {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0.iter().map(|&digit| (digit + 48) as char).collect::<String>())
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|&digit| (digit + 48) as char)
+                .collect::<String>()
+        )
     }
 }
 
@@ -168,23 +186,6 @@ pub enum GTINType {
     GTIN13,
     GTIN14,
 }
-
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum GTINError {
-    InvalidGTIN(&'static str),
-}
-
-impl fmt::Display for GTINError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GTINError::InvalidGTIN(msg) => write!(f, "Invalid GTIN: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for GTINError {}
-
 
 // GTIN numbers are inacurate to prove the code works as expected
 #[cfg(test)]
@@ -209,12 +210,23 @@ mod tests {
     #[test]
     fn test_get_check_digit() {
         let gtin = GTIN::new([0, 9, 9, 2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 2]);
-        assert_eq!(gtin.get_check_digit(), 2);
+        assert_eq!(gtin.check_digit(), 2);
     }
 
     #[test]
     fn test_calculate_check_digit() {
         let gtin = GTIN::new([0, 9, 9, 2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
         assert_eq!(gtin.calculate_check_digit(), 7);
+    }
+
+    #[test]
+    fn test_to_from_string() {
+        let gtin = "09921234567897".parse::<GTIN>().unwrap();
+        let gtin_string = gtin.to_string();
+        assert_eq!(gtin_string, "09921234567897");
+
+        let gtin = GTIN::try_from("09921234567897").unwrap();
+        let gtin_string = gtin.to_string();
+        assert_eq!(gtin_string, "09921234567897");
     }
 }

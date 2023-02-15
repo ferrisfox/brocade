@@ -8,6 +8,8 @@ pub struct Brocade {
     client: reqwest::Client,
 }
 
+static BASE_URL: &str = "https://www.brocade.io/products";
+
 impl Brocade {
     pub fn new() -> Brocade {
         // Create headers for the client.
@@ -23,19 +25,19 @@ impl Brocade {
     }
 
     pub async fn get_product_async(&self, gtin: gtin::GTIN) -> reqwest::Result<Product> {
-        self.client.get(&format!("https://www.brocade.io/products/{gtin}"))
+        self.client.get(format!("{BASE_URL}/{gtin}"))
             .send().await?
             .json().await
     }
 
     pub async fn get_product_list_async(&self) -> reqwest::Result<ProductList> {
-        self.client.get("https://www.brocade.io/products")
+        self.client.get(BASE_URL)
             .send().await?
             .json().await
     }
 
     pub async fn query_product_async(&self, query: &str) -> reqwest::Result<ProductList> {
-        self.client.get(&format!("https://www.brocade.io/products?query={query}"))
+        self.client.get(format!("{BASE_URL}?query={query}"))
             .send().await?
             .json().await
     }
@@ -100,6 +102,5 @@ mod tests {
         let brocade = Brocade::new();
         let items = brocade.get_product_list_async().await.unwrap();
         assert_eq!(items.len(), 100);
-        println!("{:?}", items);
     }
 }

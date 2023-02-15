@@ -1,5 +1,3 @@
-#![allow(clippy::missing_errors_doc)]
-
 use std::ops::Deref;
 
 use serde::{Serialize, Deserialize};
@@ -7,12 +5,45 @@ use serde::{Serialize, Deserialize};
 pub mod gtin;
 
 pub struct Brocade {
+    client: reqwest::Client,
 }
 
 impl Brocade {
-    pub async fn get_item_async(&self, gtin: gtin::GTIN) -> reqwest::Result<Item> {
-        reqwest::get(&format!("https://www.brocade.io/api/items/{gtin}")).await?
+    pub fn new() -> Brocade {
+        // Create headers for the client.
+        let mut headers = reqwest::header::HeaderMap::with_capacity(1);
+        headers.insert("accept", "application/json".parse().unwrap());
+        
+        // Create the reqwest client.
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .build().unwrap();
+
+        Brocade { client }
+    }
+
+    pub async fn get_product_async(&self, gtin: gtin::GTIN) -> reqwest::Result<Product> {
+        self.client.get(&format!("https://www.brocade.io/products/{gtin}"))
+            .send().await?
             .json().await
+    }
+
+    pub async fn get_product_list_async(&self) -> reqwest::Result<ProductList> {
+        self.client.get("https://www.brocade.io/products")
+            .send().await?
+            .json().await
+    }
+
+    pub async fn query_product_async(&self, query: &str) -> reqwest::Result<ProductList> {
+        self.client.get(&format!("https://www.brocade.io/products?query={query}"))
+            .send().await?
+            .json().await
+    }
+}
+
+impl Default for Brocade {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -20,31 +51,33 @@ impl Brocade {
 pub struct BrocadeError;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Item {
+pub struct Product {
     pub gtin14: gtin::GTIN,
     pub brand_name: Option<String>,
     pub name: Option<String>,
 }
 
-pub struct ItemList(Vec<Item>);
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct ProductList(Vec<Product>);
 
-impl Deref for ItemList {
-    type Target = Vec<Item>;
+impl Deref for ProductList {
+    type Target = Vec<Product>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
+// TODO: Test should not be dependent on the internet or specific data from the Brocade API.
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
     async fn test_get_item() {
-        let brocade = Brocade {};
-        let item = brocade.get_item_async("00074887615305".parse().unwrap()).await.unwrap();
-        assert_eq!(item, Item {
+        let brocade = Brocade::new();
+        let item = brocade.get_product_async("00074887615305".parse().unwrap()).await.unwrap();
+        assert_eq!(item, Product {
             gtin14: "00074887615305".parse().unwrap(),
             brand_name: Some("Up & Up".to_string()),
             name: Some("Exfoliating Cucumber Cleansing Towelettes".to_string()),
@@ -53,12 +86,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_item_with_null() {
-        let brocade = Brocade {};
-        let item = brocade.get_item_async("09780262134729".parse().unwrap()).await.unwrap();
-        assert_eq!(item, Item {
+        let brocade = Brocade::new();
+        let item = brocade.get_product_async("09780262134729".parse().unwrap()).await.unwrap();
+        assert_eq!(item, Product {
             gtin14: "09780262134729".parse().unwrap(),
             brand_name: None,
             name: Some("The Laws Of Simplicity".to_string()),
         });
+    }
+
+    #[tokio::test]
+    async fn test_get_product_list() {
+        let brocade = Brocade::new();
+        let items = brocade.get_product_list_async().await.unwrap();
+        assert_eq!(items.len(), 100);
+        println!("{:?}", items);
     }
 }
